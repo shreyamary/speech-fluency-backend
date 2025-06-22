@@ -1,5 +1,6 @@
 Flask
 flask-cors
+Flask-SQLAlchemy
 openai
 speechrecognition
 textstat
@@ -7,4 +8,5 @@ pydub
 ffmpeg-python
 langdetect
 deep-translator
-Flask-SQLAlchemy
+python-dotenv
+gunicorn

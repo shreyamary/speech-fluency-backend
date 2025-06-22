@@ -1,25 +1,27 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
 import speech_recognition as sr
 import textstat
 import openai
 from pydub import AudioSegment
 import os
+import re
 from langdetect import detect
 from deep_translator import GoogleTranslator
-from flask_sqlalchemy import SQLAlchemy  # <-- Added for DB
-import datetime  # Optional for timestamp
+import datetime
 
+# Flask setup
 app = Flask(__name__)
 CORS(app)
 
-# ----------- SQLite Configuration -----------
+# Database setup (SQLite)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///speechfluency.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-# ---------------------------------------------
 
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Set this in Render later
+# OpenAI setup
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Filler words list
 FILLERS = ["um", "uh", "like", "you know", "so", "actually", "basically"]
@@ -32,12 +34,11 @@ class SpeechResult(db.Model):
     fluency_score = db.Column(db.Float, nullable=True)
     word_count = db.Column(db.Integer, nullable=True)
     wpm = db.Column(db.Float, nullable=True)
-    fillers = db.Column(db.Text, nullable=True)  # store as comma-separated string
+    fillers = db.Column(db.Text, nullable=True)  # comma-separated
     language = db.Column(db.String(10), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-# -----------------------------------------
 
-# 🔹 Helper: GPT grammar feedback
+# ------------ Helper Functions -------------
 def get_gpt_feedback(text):
     prompt = f"Correct the grammar in this sentence and give friendly suggestions to improve spoken English:\n\n{text}"
     response = openai.ChatCompletion.create(
@@ -46,7 +47,6 @@ def get_gpt_feedback(text):
     )
     return response.choices[0].message.content.strip()
 
-# 🔹 Helper: AI Mentor Chatbot
 def mentor_chat(message):
     prompt = f"You are a friendly spoken English coach. Reply to: {message}"
     response = openai.ChatCompletion.create(
@@ -55,41 +55,51 @@ def mentor_chat(message):
     )
     return response.choices[0].message.content.strip()
 
-# 🔹 Endpoint: Analyze Speech
+def detect_fillers(text):
+    words = re.findall(r'\b\w+\b', text.lower())
+    return [w for w in FILLERS if w in words]
+
+# ------------ API Routes -------------
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    if 'audio' not in request.files:
+    audio_file = request.files.get('audio') or request.files.get('file')
+    if not audio_file:
         return jsonify({"error": "No audio uploaded"}), 400
 
-    audio_file = request.files['audio']
-    audio_path = "temp.wav"
-
-    # Convert to WAV if needed
+    # Convert to WAV
     audio = AudioSegment.from_file(audio_file)
+    audio_path = "temp.wav"
     audio.export(audio_path, format="wav")
 
-    # Use SpeechRecognition
     recognizer = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
         audio_data = recognizer.record(source)
         try:
             transcript = recognizer.recognize_google(audio_data)
         except sr.UnknownValueError:
+            os.remove(audio_path)
             return jsonify({"error": "Speech not recognized"}), 400
 
-    # Clean up temp file
     os.remove(audio_path)
 
-    # Calculate features
+    # Duration in seconds (passed from client)
+    try:
+        duration = float(request.form.get("duration", 0))
+        if duration == 0:
+            return jsonify({"error": "Invalid or zero duration"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid duration"}), 400
+
+    duration_minutes = duration / 60
     word_count = len(transcript.split())
-    duration_minutes = float(request.form.get("duration", 1)) / 60
     wpm = round(word_count / duration_minutes, 2)
     score = textstat.flesch_reading_ease(transcript)
     grammar_feedback = get_gpt_feedback(transcript)
-    detected_fillers = [w for w in FILLERS if w in transcript.lower()]
+    detected_fillers = detect_fillers(transcript)
     lang = detect(transcript)
 
-    # Save results to DB
+    # Save to database
     result = SpeechResult(
         transcript=transcript,
         grammar_feedback=grammar_feedback,
@@ -112,7 +122,6 @@ def analyze():
         "grammar_feedback": grammar_feedback
     })
 
-# 🔹 Endpoint: AI Mentor Chat
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -120,4 +129,11 @@ def chat():
     if not message:
         return jsonify({"error": "No message provided"}), 400
     reply = mentor_chat(message)
-    return jso
+    return jsonify({"reply": reply})
+
+
+# ------------ App Runner -------------
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

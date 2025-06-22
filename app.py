@@ -13,11 +13,11 @@ import datetime  # Optional for timestamp
 app = Flask(__name__)
 CORS(app)
 
-# ----------- PostgreSQL Configuration -----------
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL") or 'postgresql://username:password@hostname:port/dbname'
+# ----------- SQLite Configuration -----------
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///speechfluency.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-# -----------------------------------------------
+# ---------------------------------------------
 
 openai.api_key = os.getenv("OPENAI_API_KEY")  # Set this in Render later
 
@@ -120,26 +120,4 @@ def chat():
     if not message:
         return jsonify({"error": "No message provided"}), 400
     reply = mentor_chat(message)
-    return jsonify({"reply": reply})
-
-# 🔹 Endpoint: Translation
-@app.route("/translate", methods=["POST"])
-def translate():
-    data = request.get_json()
-    text = data.get("text", "")
-    target_lang = data.get("to", "en")
-    try:
-        translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
-        return jsonify({"translated": translated})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# 🔹 Home route
-@app.route("/", methods=["GET"])
-def home():
-    return "Speech Fluency Coach API is running!"
-
-if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()  # Create tables if not exist
-    app.run(host='0.0.0.0', port=10000)
+    return jso

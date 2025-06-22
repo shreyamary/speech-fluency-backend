@@ -6,14 +6,12 @@ import openai
 from pydub import AudioSegment
 import os
 from langdetect import detect
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
 CORS(app)
 
 openai.api_key = os.getenv("OPENAI_API_KEY")  # Set this in Render later
-
-translator = Translator()
 
 # Filler words list
 FILLERS = ["um", "uh", "like", "you know", "so", "actually", "basically"]
@@ -97,8 +95,8 @@ def translate():
     text = data.get("text", "")
     target_lang = data.get("to", "en")
     try:
-        translated = translator.translate(text, dest=target_lang)
-        return jsonify({"translated": translated.text})
+        translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
+        return jsonify({"translated": translated})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
